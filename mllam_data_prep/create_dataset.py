@@ -154,6 +154,7 @@ def create_dataset(config: Config):
         logger.info(f"Loading dataset {dataset_name} from {path}")
         try:
             ds_input = load_input_dataset(fp=path)
+            ds_input["cell"] = ds_input["cell"].astype(int)
         except Exception as ex:
             raise Exception(f"Error loading dataset {dataset_name} from {path}") from ex
 
