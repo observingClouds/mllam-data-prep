@@ -2,7 +2,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
 import dataclass_wizard
+import xarray as xr
 from dataclass_wizard import JSONWizard
+from deepdiff import DeepDiff
+from packaging.version import Version
 
 
 class InvalidConfigException(Exception):
@@ -295,6 +298,38 @@ class Splitting:
 
 
 @dataclass
+class ConvexHullCropping:
+    """
+    Define the method applied for cropping the spatial domain before writing
+    the transformed output dataset. This is typically used when you want to
+    create a dataset to provide data in a boundary around a limited-area
+    domain.
+
+    The cropping is done by creating a convex hull around the spatial
+    coordinates of an *interior* dataset (this will typically be the
+    "limited-area" domain when doing Limited Area Modelling) and then including
+    all points that are within a margin of the convex hull boundary. In addition
+    to including the points inside the convex hull, you can also include the
+    points inside the convex hull of the interior dataset by setting the
+    `include_interior` attribute to `True`.
+
+    Attributes
+    ----------
+    margin_width_degrees: float
+        The width (in degrees) of the margin applied to the convex hull
+        boundary of the interior dataset used to define the cropping domain.
+    interior_dataset_config_path: str
+        The path to the configuration file for the dataset defining the interior domain
+    include_interior_points: bool
+        Whether to include the points inside the convex hull of the interior dataset
+    """
+
+    margin_width_degrees: float
+    interior_dataset_config_path: str
+    include_interior_points: bool = False
+
+
+@dataclass
 class Output:
     """
     Definition of the output dataset that will be created by the dataset generation, you should
@@ -331,12 +366,19 @@ class Output:
     splitting: Splitting
         Defines the splits of the dataset (e.g. train, test, validation), the dimension to split
         the dataset along, and optionally the statistics to compute for each split.
+
+    domain_cropping: ConvexHullCropping
+        Defines the method applied for cropping the spatial domain before writing
+        the transformed output dataset. This is typically used when you want to
+        create a dataset to provide data in a boundary around a limited-area
+        domain.
     """
 
     variables: Dict[str, List[str]]
     coord_ranges: Dict[str, Range] = field(default_factory=dict)
     chunking: Dict[str, int] = field(default_factory=dict)
     splitting: Optional[Splitting] = None
+    domain_cropping: Optional[ConvexHullCropping] = None
 
 
 @dataclass
@@ -380,6 +422,64 @@ class Config(dataclass_wizard.JSONWizard, dataclass_wizard.YAMLWizard):
 
     class _(JSONWizard.Meta):
         raise_on_unknown_json_key = True
+
+
+class UnsupportedMllamDataPrepVersion(Exception):
+    pass
+
+
+def find_config_differences(
+    config: Config, ds_existing: xr.Dataset
+) -> Union[None, dict]:
+    """
+    Compare the provided config against the one the provided dataset is created
+    from (which is stored in the `creation_config` attribute), and return the
+    differences.
+
+    Parameters
+    ----------
+    config : Config
+        The configuration object to compare against
+    ds_existing : xr.Dataset
+        The existing dataset to compare against
+
+    Returns
+    -------
+    Union[None, dict]
+        If the configurations are the same, returns None. If they are different, returns
+        a dictionary of the differences.
+
+    Raises
+    ------
+    UnsupportedMllamDataPrepVersion
+        If the existing dataset was created with an older version of mllam-data-prep
+        that does not have the `creation_config` attribute
+
+    """
+    required_mdp_version = Version("v0.6.0")
+
+    config_mdp_version = Version(ds_existing.attrs["mdp_version"])
+    if config_mdp_version < required_mdp_version:
+        raise UnsupportedMllamDataPrepVersion(
+            "The existing dataset was created with an older version of mllam-data-prep "
+            f"({config_mdp_version}), and does not have the creation_config attribute "
+            f"(added in v{required_mdp_version}). Please delete the existing dataset "
+            "or set overwrite='always' to overwrite it."
+        )
+    else:
+        existing_config_yaml = ds_existing.attrs.get("creation_config", None)
+        if existing_config_yaml is None:
+            raise ValueError(
+                "The provided dataset does not have a creation_config attribute"
+            )
+        existing_config = Config.from_yaml(existing_config_yaml)
+        if existing_config != config:
+            differences = DeepDiff(
+                existing_config.to_dict(), config.to_dict(), ignore_order=True
+            ).to_dict()
+            return differences
+
+        return None
 
 
 if __name__ == "__main__":
