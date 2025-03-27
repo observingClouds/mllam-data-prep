@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 import dataclass_wizard
@@ -75,8 +76,8 @@ class Range:
         then the entire range will be selected.
     """
 
-    start: Union[str, int, float]
-    end: Union[str, int, float]
+    start: Union[str, int, float, datetime]
+    end: Union[str, int, float, datetime]
     step: Optional[Union[str, int, float]] = None
 
 
@@ -382,7 +383,7 @@ class Output:
 
 
 @dataclass
-class Config(dataclass_wizard.JSONWizard, dataclass_wizard.YAMLWizard):
+class Config(dataclass_wizard.YAMLWizard):
     """Configuration for the model.
 
     Attributes:
