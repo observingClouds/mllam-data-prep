@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 import dataclass_wizard
 import xarray as xr
 from dataclass_wizard import JSONWizard
-from deepdiff import DeepDiff
+#from deepdiff import DeepDiff
 from packaging.version import Version
 
 
@@ -474,11 +474,12 @@ def find_config_differences(
                 "The provided dataset does not have a creation_config attribute"
             )
         existing_config = Config.from_yaml(existing_config_yaml)
-        if existing_config != config:
-            differences = DeepDiff(
-                existing_config.to_dict(), config.to_dict(), ignore_order=True
-            ).to_dict()
-            return differences
+        raise NotImplementedError("This is removed do to laziness")
+        #if existing_config != config:
+        #    differences = DeepDiff(
+        #        existing_config.to_dict(), config.to_dict(), ignore_order=True
+        #    ).to_dict()
+        #    return differences
 
         return None
 
