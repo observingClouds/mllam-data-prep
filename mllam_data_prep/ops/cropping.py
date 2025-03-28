@@ -21,11 +21,18 @@ def _get_latlon_coords(da: xr.DataArray) -> tuple:
         The latitude and longitude coordinates.
     """
     if "latitude" in da.coords and "longitude" in da.coords:
-        return (da.longitude, da.latitude)
+        lon, lat = (da.longitude, da.latitude)
     elif "lat" in da.coords and "lon" in da.coords:
-        return (da.lon, da.lat)
+        lon, lat = (da.lon, da.lat)
+    elif "clat" in da.coords and "clon" in da.coords:
+        lon, lat = (da.clon, da.clat)
     else:
         raise Exception("Could not find lat/lon coordinates in DataArray.")
+    
+    if max(lon) < 1 and max(lat) < 1:
+        lon = np.rad2deg(lon)
+        lat = np.rad2deg(lat)
+    return lon, lat
 
 
 def create_convex_hull_mask(ds: xr.Dataset, ds_reference: xr.Dataset) -> xr.DataArray:
