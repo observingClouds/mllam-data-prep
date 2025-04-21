@@ -5,6 +5,9 @@ import spherical_geometry as sg
 import xarray as xr
 from spherical_geometry.polygon import SphericalPolygon
 
+import tqdm
+from dask.diagnostics import ProgressBar
+
 
 def _get_latlon_coords(da: xr.DataArray) -> tuple:
     """
@@ -29,7 +32,7 @@ def _get_latlon_coords(da: xr.DataArray) -> tuple:
     else:
         raise Exception("Could not find lat/lon coordinates in DataArray.")
     
-    if max(lon) < 1 and max(lat) < 1:
+    if np.max(lon) < 1 and np.max(lat) < 1:
         lon = np.rad2deg(lon)
         lat = np.rad2deg(lat)
     return lon, lat
@@ -69,9 +72,20 @@ def create_convex_hull_mask(ds: xr.Dataset, ds_reference: xr.Dataset) -> xr.Data
     chull_lam = SphericalPolygon.convex_hull(da_ref_xyz.values)
 
     # call .load() to avoid using dask arrays in the following apply_ufunc
-    da_interior_mask = xr.apply_ufunc(
-        chull_lam.contains_lonlat, da_lon.load(), da_lat.load(), vectorize=True
-    ).astype(bool)
+    with ProgressBar():
+        da_lon_loaded = da_lon.load()
+        da_lat_loaded = da_lat.load()
+
+        total_points = da_lon_loaded.size
+
+        with tqdm.tqdm(total=total_points, desc="Processing points") as pbar:
+            def update_progress(*args, **kwargs):
+                pbar.update(1)
+                return chull_lam.contains_lonlat(*args, **kwargs)
+
+            da_interior_mask = xr.apply_ufunc(
+                update_progress, da_lon_loaded, da_lat_loaded, vectorize=True
+            ).astype(bool)
     da_interior_mask.attrs[
         "long_name"
     ] = "contained in convex hull of source dataset (da_ref)"
