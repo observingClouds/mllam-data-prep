@@ -298,6 +298,8 @@ def create_dataset(config: Config):
         )
         ds["splits"] = da_splits
 
+        logger.info("Splitting successful")
+
     # ensure any dimensions for which coordinate values aren't yet set that
     # these are given integer values. This will for example apply when stacking
     # (x, y)-coordinates to a grid-index coordinate. These need unique values
@@ -307,6 +309,7 @@ def create_dataset(config: Config):
             ds[d] = np.arange(ds[d].size)
 
     if config.output.domain_cropping is not None:
+        logger.info("Cropping is set")
         domain_cropping = config.output.domain_cropping
         ds_interior_domain = create_dataset(config=config_interior_domain)
         logger.info(
@@ -331,6 +334,8 @@ def create_dataset(config: Config):
     ] = "mllam-data-prep (https://github.com/mllam/mllam-data-prep)"
     ds.attrs["mdp_version"] = f"v{__version__}"
     ds.attrs["creation_config"] = config.to_yaml()
+
+    logger.info("Dataset created")
 
     return ds
 
