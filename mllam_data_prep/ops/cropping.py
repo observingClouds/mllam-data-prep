@@ -1,12 +1,13 @@
 from typing import Tuple, Union
 
 import numpy as np
+import shapely
 import spherical_geometry as sg
 import xarray as xr
+from loguru import logger
+from shapely import Polygon, contains
+from shapely.geometry import MultiPoint
 from spherical_geometry.polygon import SphericalPolygon
-
-import tqdm
-from dask.diagnostics import ProgressBar
 
 
 def _get_latlon_coords(da: xr.DataArray) -> tuple:
@@ -72,20 +73,18 @@ def create_convex_hull_mask(ds: xr.Dataset, ds_reference: xr.Dataset) -> xr.Data
     chull_lam = SphericalPolygon.convex_hull(da_ref_xyz.values)
 
     # call .load() to avoid using dask arrays in the following apply_ufunc
-    with ProgressBar():
-        da_lon_loaded = da_lon.load()
-        da_lat_loaded = da_lat.load()
-
-        total_points = da_lon_loaded.size
-
-        with tqdm.tqdm(total=total_points, desc="Processing points") as pbar:
-            def update_progress(*args, **kwargs):
-                pbar.update(1)
-                return chull_lam.contains_lonlat(*args, **kwargs)
-
-            da_interior_mask = xr.apply_ufunc(
-                update_progress, da_lon_loaded, da_lat_loaded, vectorize=True
-            ).astype(bool)
+    logger.info("Creating convex hull mask...")
+    # Convert convex hull points to a Shapely Polygon in 3D
+    x = Polygon(chull_lam._polygons[0]._points)
+    shapely.prepare(x)
+    points_xyz = _latlon_to_unit_sphere_xyz(da_lat=da_lat.load(), da_lon=da_lon.load())
+    # Reshape to (N, 3) for vectorized operation
+    pts = points_xyz.values.reshape(-1, 3)
+    # Create a shapely MultiPoint geometry for all points at once
+    pts_geom = MultiPoint(pts)
+    # Vectorized contains: returns a boolean array
+    mask_flat = contains(x, pts_geom.geoms)
+    logger.info("Convex hull mask created.")
     da_interior_mask.attrs[
         "long_name"
     ] = "contained in convex hull of source dataset (da_ref)"
@@ -202,7 +201,6 @@ def distance_to_convex_hull_boundary(
     ds_reference: xr.Dataset,
     grid_index_dim: str = "grid_index",
     include_convex_hull_mask: bool = False,
-    invert: bool = False,
 ) -> Union[xr.DataArray, Tuple[xr.DataArray, xr.DataArray]]:
     """
     For all points in `ds` that are external to the convex hull of the points in
@@ -249,9 +247,6 @@ def distance_to_convex_hull_boundary(
     da_ch_mask, ds_chull_lat_lons = create_convex_hull_mask(
         ds=ds, ds_reference=ds_reference_separate_gridindex
     )
-
-    if invert:
-        da_ch_mask = ~da_ch_mask
 
     # only consider points that are external to the convex hull
     ds_exterior = ds.where(~da_ch_mask, drop=True)
@@ -356,11 +351,6 @@ def crop_with_convex_hull(
         The thickness of the margin to apply to the convex hull boundary in
         degrees. Points within this margin will be included in the output.
     """
-    if margin_thickness < 0.0:
-        invert = True
-        margin_thickness = -margin_thickness
-    else:
-        invert = False
     if margin_thickness == 0.0:
         if not include_interior_points:
             raise Exception(
@@ -373,16 +363,12 @@ def crop_with_convex_hull(
             ds_reference,
             grid_index_dim=grid_index_dim,
             include_convex_hull_mask=True,
-            invert=invert,
         )
         max_dist_radians = margin_thickness * np.pi / 180.0
         da_boundary_mask = da_min_dist_to_ref < max_dist_radians
 
         if not include_interior_points:
             da_mask = da_boundary_mask
-        elif invert:
-            da_mask = ~da_ch_mask
-            da_mask[da_mask] = da_boundary_mask
         else:
             da_interior_points = da_ch_mask.where(da_ch_mask, drop=True)
             da_mask = xr.concat(
