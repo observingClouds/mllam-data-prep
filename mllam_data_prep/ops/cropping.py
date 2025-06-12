@@ -1,5 +1,6 @@
 from typing import Tuple, Union
 
+import dask.array as da
 import numpy as np
 import shapely
 import spherical_geometry as sg
@@ -70,21 +71,31 @@ def create_convex_hull_mask(ds: xr.Dataset, ds_reference: xr.Dataset) -> xr.Data
     # latlon to (x, y, z) on unit sphere
     da_ref_xyz = _latlon_to_unit_sphere_xyz(da_lat=da_lat_ref, da_lon=da_lon_ref)
 
-    chull_lam = SphericalPolygon.convex_hull(da_ref_xyz.values)
+    chull_lam = SphericalPolygon.convex_hull(da_ref_xyz)
 
     # call .load() to avoid using dask arrays in the following apply_ufunc
     logger.info("Creating convex hull mask...")
     # Convert convex hull points to a Shapely Polygon in 3D
     x = Polygon(chull_lam._polygons[0]._points)
+    logger.info("Step 1")
     shapely.prepare(x)
-    points_xyz = _latlon_to_unit_sphere_xyz(da_lat=da_lat.load(), da_lon=da_lon.load())
+    logger.info("Step 2")
+    points_xyz = _latlon_to_unit_sphere_xyz(da_lat=da_lat, da_lon=da_lon)
+    logger.info("Step 3")
     # Reshape to (N, 3) for vectorized operation
-    pts = points_xyz.values.reshape(-1, 3)
+    pts = points_xyz.data.reshape(-1, 3)
+    logger.info("Step 4")
     # Create a shapely MultiPoint geometry for all points at once
-    pts_geom = MultiPoint(pts)
+    pts_geom = MultiPoint(pts.compute())
+    logger.info("Step 5")
     # Vectorized contains: returns a boolean array
     mask_flat = contains(x, pts_geom.geoms)
     logger.info("Convex hull mask created.")
+    da_interior_mask = xr.DataArray(
+        mask_flat.reshape(points_xyz.shape[:-1]).astype(bool),
+        coords=da_lat.coords,
+        dims=da_lat.dims,
+    )
     da_interior_mask.attrs[
         "long_name"
     ] = "contained in convex hull of source dataset (da_ref)"
@@ -120,7 +131,7 @@ def _latlon_to_unit_sphere_xyz(
         The (x, y, z) coordinates on the unit sphere as an xarray.DataArray
         with dimensions (grid_index, component).
     """
-    pts_xyz = np.array(sg.vector.lonlat_to_vector(da_lon, da_lat)).T
+    pts_xyz = da.array(sg.vector.lonlat_to_vector(da_lon, da_lat)).T
     da_xyz = xr.DataArray(
         pts_xyz, coords=da_lat.coords, dims=list(da_lat.dims) + ["xyz"]
     )

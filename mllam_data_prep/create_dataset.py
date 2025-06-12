@@ -427,8 +427,9 @@ def create_dataset_zarr(
             raise NotImplementedError(
                 f"Unsupported overwrite option {overwrite}. Options are 'always', 'never', or 'on_config_change'"
             )
-
+    logger.info("Start creeation")
     ds = create_dataset(config=config)
+    logger.info("Finishing creation")
 
     logger.info("Writing dataset to zarr")
 
