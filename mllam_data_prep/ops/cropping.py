@@ -9,6 +9,7 @@ from loguru import logger
 from shapely import Polygon, contains
 from shapely.geometry import MultiPoint
 from spherical_geometry.polygon import SphericalPolygon
+from tqdm import tqdm
 
 
 def _get_latlon_coords(da: xr.DataArray) -> tuple:
@@ -84,30 +85,38 @@ def create_convex_hull_mask(ds: xr.Dataset, ds_reference: xr.Dataset) -> xr.Data
     logger.info("Step 3")
     # Reshape to (N, 3) for vectorized operation
     pts = points_xyz.data.reshape(-1, 3)
-    logger.info("Step 4")
+    logger.info(f"Step 4, pts shape: {pts.shape}")
     # Create a shapely MultiPoint geometry for all points at once
-    pts_geom = MultiPoint(pts.compute())
+    # Process pts in chunks to avoid memory issues
+    chunk_size = 100000  # Adjust as needed
+    num_points = pts.shape[0]
+    mask_flat = np.zeros(num_points, dtype=bool)
+    for i in tqdm(range(0, num_points, chunk_size), desc="Convex hull mask"):
+        pts_chunk = pts[i:i+chunk_size]
+        pts_geom_chunk = MultiPoint(pts_chunk)
+        mask_flat[i:i+chunk_size] = contains(x, pts_geom_chunk.geoms)
     logger.info("Step 5")
-    # Vectorized contains: returns a boolean array
-    mask_flat = contains(x, pts_geom.geoms)
     logger.info("Convex hull mask created.")
     da_interior_mask = xr.DataArray(
         mask_flat.reshape(points_xyz.shape[:-1]).astype(bool),
         coords=da_lat.coords,
         dims=da_lat.dims,
     )
+    logger.info("Step 6")
     da_interior_mask.attrs[
         "long_name"
     ] = "contained in convex hull of source dataset (da_ref)"
-
+    logger.info("Step 7")
     # Get points at edge of convex hull
-    chull_lam_lon, chull_lam_lat = list(chull_lam.to_lonlat())[0]
+    chull_lam_lon, chull_lam_lat = next(chull_lam.to_lonlat())
+    logger.info("Step 8")
     chull_lat_lons = xr.Dataset(
         coords={
             "lon": (["grid_index_ref"], chull_lam_lon),
             "lat": (["grid_index_ref"], chull_lam_lat),
         }
     )
+    logger.info("Step 9")
 
     return da_interior_mask, chull_lat_lons
 

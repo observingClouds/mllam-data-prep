@@ -130,6 +130,7 @@ def create_dataset(config: Config):
         The dataset created from the input datasets with a variable for each output
         as defined in the config file.
     """
+    logger.info(f"Creating dataset from config {str(config)}")
     if not config.schema_version in SUPPORTED_CONFIG_VERSIONS:
         raise ValueError(
             f"Unsupported schema version {config.schema_version}. Only schema versions "

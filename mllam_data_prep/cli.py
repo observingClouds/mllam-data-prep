@@ -81,6 +81,8 @@ def call(args=None):
 
         # print the dashboard link
         logger.info(f"Dashboard link: {cluster.dashboard_link}")
+    
+    logger.info("Creating dataset from config file...")
 
     create_dataset_zarr(
         fp_config=args.config, fp_zarr=args.output, overwrite=args.overwrite

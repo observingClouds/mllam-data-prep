@@ -182,7 +182,7 @@ class DimMapping:
     dims: Optional[List[str]] = None
     dim: Optional[str] = None
     name_format: Optional[str] = field(default=None)
-    coord_ranges: Optional[Dict[str, Range]] = field(default_factory=dict)
+    coord_ranges: Optional[Dict[str, Union[Range,List]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -376,7 +376,7 @@ class Output:
     """
 
     variables: Dict[str, List[str]]
-    coord_ranges: Dict[str, Range] = field(default_factory=dict)
+    coord_ranges: Dict[str, Union[Range, List]] = field(default_factory=dict)
     chunking: Dict[str, int] = field(default_factory=dict)
     splitting: Optional[Splitting] = None
     domain_cropping: Optional[ConvexHullCropping] = None
