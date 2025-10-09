@@ -141,6 +141,8 @@ def shortest_distance_to_arc(
     np.ndarray, shape (num_points,)
         The distances in radians
     """
+    global pbar
+    pbar.update(1)
     # Calculate normal vector to the plane of the great circle
     normal_vector = np.cross(arc_start_cartesian, arc_end_cartesian)
     normal_vector = normal_vector / np.linalg.norm(normal_vector)  # Normalize
