@@ -77,17 +77,14 @@ def create_convex_hull_mask(ds: xr.Dataset, ds_reference: xr.Dataset) -> xr.Data
     da_interior_mask.attrs[
         "long_name"
     ] = "contained in convex hull of source dataset (da_ref)"
-    logger.info("Step 7")
     # Get points at edge of convex hull
     chull_lam_lon, chull_lam_lat = next(chull_lam.to_lonlat())
-    logger.info("Step 8")
     chull_lat_lons = xr.Dataset(
         coords={
             "lon": (["grid_index_ref"], chull_lam_lon),
             "lat": (["grid_index_ref"], chull_lam_lat),
         }
     )
-    logger.info("Step 9")
 
     return da_interior_mask, chull_lat_lons
 
