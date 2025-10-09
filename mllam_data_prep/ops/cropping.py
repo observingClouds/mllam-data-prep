@@ -69,11 +69,11 @@ def create_convex_hull_mask(ds: xr.Dataset, ds_reference: xr.Dataset) -> xr.Data
     da_ref_xyz = _latlon_to_unit_sphere_xyz(da_lat=da_lat_ref, da_lon=da_lon_ref)
 
     chull_lam = SphericalPolygon.convex_hull(da_ref_xyz)
-
     # call .load() to avoid using dask arrays in the following apply_ufunc
-    da_interior_mask = xr.apply_ufunc(
-        chull_lam.contains_lonlat, da_lon.load(), da_lat.load(), vectorize=True
-    ).astype(bool)
+    da_interior_mask = ds_reference.grid_index_ref.astype('bool').rename(grid_index_ref="grid_index")
+    #xr.apply_ufunc(
+    #    chull_lam.contains_lonlat, da_lon.load(), da_lat.load(), vectorize=True
+    #).astype(bool)
     da_interior_mask.attrs[
         "long_name"
     ] = "contained in convex hull of source dataset (da_ref)"
@@ -239,9 +239,9 @@ def distance_to_convex_hull_boundary(
     da_ch_mask, ds_chull_lat_lons = create_convex_hull_mask(
         ds=ds, ds_reference=ds_reference_separate_gridindex
     )
-
     # only consider points that are external to the convex hull
-    ds_exterior = ds.where(~da_ch_mask, drop=True)
+    exterior_ind = list(set(ds.grid_index.values).difference(set(da_ch_mask.grid_index.values)))
+    ds_exterior = ds.sel(grid_index=exterior_ind)
     ds_exterior_lon, ds_exterior_lat = _get_latlon_coords(ds_exterior)
 
     da_xyz = _latlon_to_unit_sphere_xyz(ds_exterior_lon, ds_exterior_lat)
