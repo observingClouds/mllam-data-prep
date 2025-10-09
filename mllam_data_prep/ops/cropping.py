@@ -118,6 +118,7 @@ def _latlon_to_unit_sphere_xyz(
     return da_xyz
 
 
+@np.vectorize(excluded={0}, signature='(n),(n)->(m)')
 def shortest_distance_to_arc(
     point_cartesian: np.ndarray,
     arc_start_cartesian: np.ndarray,
