@@ -254,21 +254,22 @@ def distance_to_convex_hull_boundary(
 
     # Calculate minimum distance to each arc and take the minimum
     # distance over all arcs
-    mindist_to_ref = np.stack(
-        [
-            shortest_distance_to_arc(da_xyz, arc_start, arc_end)
-            for arc_start, arc_end in chull_arcs
-        ],
-        axis=0,
-    ).min(axis=0)
+    import ipdb; ipdb.set_trace()
+    #arcs = np.stack(chull_arcs)
+    #global pbar
+    #with tqdm(total=len(chull_arcs)) as pbar:
+    #    distances = shortest_distance_to_arc(da_xyz, arcs[:,0], arcs[:,1])
+    #mindist_to_ref = distances.min(axis=0)
 
-    da_mindist_to_ref = xr.DataArray(
-        mindist_to_ref, coords=ds_exterior_lat.coords, dims=ds_exterior_lat.dims
-    )
-    da_mindist_to_ref.attrs[
-        "long_name"
-    ] = "minimum distance to convex hull boundary of reference dataset"
-    da_mindist_to_ref.attrs["units"] = "radians"
+    #da_mindist_to_ref = xr.DataArray(
+    #    mindist_to_ref, coords=ds_exterior_lat.coords, dims=ds_exterior_lat.dims
+    #)
+    #da_mindist_to_ref.attrs[
+    #    "long_name"
+    #] = "minimum distance to convex hull boundary of reference dataset"
+    #da_mindist_to_ref.attrs["units"] = "radians"
+
+    da_mindist_to_ref = xr.open_dataset("/home/has/repos/mllam-exps-ShCu/da_mindist_to_ref.nc")['da_mindist_to_ref']
 
     if include_convex_hull_mask:
         return da_mindist_to_ref, da_ch_mask
