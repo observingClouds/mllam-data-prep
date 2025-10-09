@@ -16,6 +16,7 @@ from loguru import logger
 from ..chunking import chunk_dataset
 
 REQUIRED_FIELD_ATTRIBUTES = ["units", "long_name"]
+sys.path.append("..")
 
 
 def derive_variable(ds, derived_variable, chunking, target_dims):
