@@ -1,6 +1,6 @@
 [project]
 name = "mllam-data-prep"
-version = "0.5.0"
+version = "0.6.1"
 description = "dataset preparation for data-driven weather models"
 authors = [
     {name = "Leif Denby", email = "lcd@dmi.dk"},
@@ -11,6 +11,7 @@ authors = [
     {name = "Kashif Rasul", email = "kashif.rasul@gmail.com"},
     {name = "Jordan Matelsky", email = "opensource@matelsky.com"},
     {name = "Martin Frølund", email = "maf@dmi.dk"},
+    {name = "Simon Kamuk Christiansen", email = "skc@dmi.dk"},
 ]
 dependencies = [
     "xarray>=2024.2.0",
@@ -20,7 +21,7 @@ dependencies = [
     "isodate>=0.6.1",
     "requests>=2.31.0",
     "aiohttp>=3.9.3",
-    "dataclass-wizard==0.30.0",
+    "dataclass-wizard>=0.29.2",
     "semver>=3.0.2",
     "rich>=13.7.1",
     "dask>=2024.2.1",
