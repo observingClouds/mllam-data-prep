@@ -376,7 +376,7 @@ class Output:
     """
 
     variables: Dict[str, List[str]]
-    coord_ranges: Dict[str, Union[Range, List]] = field(default_factory=dict)
+    coord_ranges: Dict[str, Range] = field(default_factory=dict)
     chunking: Dict[str, int] = field(default_factory=dict)
     splitting: Optional[Splitting] = None
     domain_cropping: Optional[ConvexHullCropping] = None
