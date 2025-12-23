@@ -262,10 +262,41 @@ def distance_to_convex_hull_boundary(
     else:
         print("Calculating distances")
         arcs = np.stack(chull_arcs)
-        global pbar
-        with tqdm(total=len(chull_arcs)) as pbar:
-            distances = shortest_distance_to_arc(da_xyz, arcs[:,0], arcs[:,1])
-        mindist_to_ref = distances.min(axis=0)
+        
+        # Pre-filter: use quick great-circle distance to arc endpoints to eliminate
+        # points that are clearly far from the boundary
+        print("Pre-filtering with great-circle distance to arc endpoints")
+        arc_endpoints = np.vstack([arcs[:, 0], arcs[:, 1]])  # All start and end points
+        # Compute distance from each exterior point to each arc endpoint
+        distances_to_endpoints = np.arccos(
+            np.clip(
+                np.dot(da_xyz.values, arc_endpoints.T),
+                -1, 1
+            )
+        )
+        # For each point, find the minimum distance to any arc endpoint
+        min_dist_to_endpoints = distances_to_endpoints.min(axis=1)
+        
+        # Only compute the expensive shortest_distance_to_arc for points that might
+        # be within the margin (use a generous threshold to be safe)
+        # We'll compute for all for now, but filter points with very large distances
+        max_distance_threshold = 2 * np.pi / 360  # 1 degrees - generous threshold
+        points_to_check = min_dist_to_endpoints < max_distance_threshold
+        num_points_filtered = np.sum(~points_to_check)
+        print(f"Pre-filtering eliminated {num_points_filtered} / {len(min_dist_to_endpoints)} points")
+        
+        if np.any(points_to_check):
+            da_xyz_filtered = da_xyz[points_to_check]
+            global pbar
+            with tqdm(total=len(chull_arcs)) as pbar:
+                distances = shortest_distance_to_arc(da_xyz_filtered, arcs[:,0], arcs[:,1])
+            mindist_to_ref_filtered = distances.min(axis=0)
+            
+            # Create full array with filtered values
+            mindist_to_ref = np.full(len(min_dist_to_endpoints), np.inf)
+            mindist_to_ref[points_to_check] = mindist_to_ref_filtered
+        else:
+            mindist_to_ref = np.full(len(min_dist_to_endpoints), np.inf)
 
         da_mindist_to_ref = xr.DataArray(
             mindist_to_ref, coords=ds_exterior_lat.coords, dims=ds_exterior_lat.dims
