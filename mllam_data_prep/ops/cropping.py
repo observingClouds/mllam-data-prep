@@ -266,6 +266,7 @@ def distance_to_convex_hull_boundary(
         # Pre-filter: use quick great-circle distance to arc endpoints to eliminate
         # points that are clearly far from the boundary
         print("Pre-filtering with great-circle distance to arc endpoints")
+        import ipdb; ipdb.set_trace()
         arc_endpoints = np.vstack([arcs[:, 0], arcs[:, 1]])  # All start and end points
         # Compute distance from each exterior point to each arc endpoint
         distances_to_endpoints = np.arccos(
