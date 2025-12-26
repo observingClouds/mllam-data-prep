@@ -1,6 +1,8 @@
 from typing import Tuple, Union
 
+import cupy as cp
 import dask.array as da
+import cupy_xarray
 import numpy as np
 import spherical_geometry as sg
 import xarray as xr
@@ -115,7 +117,6 @@ def _latlon_to_unit_sphere_xyz(
     return da_xyz
 
 
-@np.vectorize(excluded={0}, signature='(n),(n)->(m)')
 def shortest_distance_to_arc(
     point_cartesian: np.ndarray,
     arc_start_cartesian: np.ndarray,
@@ -141,46 +142,44 @@ def shortest_distance_to_arc(
     np.ndarray, shape (num_points,)
         The distances in radians
     """
-    global pbar
-    pbar.update(1)
     # Calculate normal vector to the plane of the great circle
-    normal_vector = np.cross(arc_start_cartesian, arc_end_cartesian)
-    normal_vector = normal_vector / np.linalg.norm(normal_vector)  # Normalize
+    normal_vector = da.cross(arc_start_cartesian, arc_end_cartesian)
+    normal_vector = normal_vector / da.linalg.norm(normal_vector)  # Normalize
 
     # Project point onto the plane
     point_projection = (
         point_cartesian
-        - np.dot(point_cartesian, normal_vector)[:, np.newaxis] * normal_vector
+        - da.dot(point_cartesian, normal_vector)[:, da.newaxis] * normal_vector
     )
 
     # Normalize to get the projected point on the sphere's surface
     projected_point = (
-        point_projection / np.linalg.norm(point_projection, axis=1)[:, np.newaxis]
+        point_projection / da.linalg.norm(point_projection, axis=1)[:, da.newaxis]
     )
 
     # Calculate the angle between the original point and the projected point
-    angle_point_to_projection = np.arccos(
-        np.clip(np.sum(point_cartesian * projected_point, axis=1), -1, 1)
+    angle_point_to_projection = da.arccos(
+        da.clip(da.sum(point_cartesian * projected_point, axis=1), -1, 1)
     )
 
     # Check if the projected point is between the start and end points of the arc
     is_between_arc = (
-        np.dot(np.cross(arc_start_cartesian, projected_point), normal_vector) >= 0
-    ) & (np.dot(np.cross(projected_point, arc_end_cartesian), normal_vector) >= 0)
+        da.dot(da.cross(arc_start_cartesian, projected_point), normal_vector) >= 0
+    ) & (da.dot(da.cross(projected_point, arc_end_cartesian), normal_vector) >= 0)
 
     # Calculate distances from the point to the start and end points of the arc
-    distance_to_start = np.arccos(
-        np.clip(np.dot(point_cartesian, arc_start_cartesian), -1, 1)
+    distance_to_start = da.arccos(
+        da.clip(da.dot(point_cartesian, arc_start_cartesian), -1, 1)
     )
-    distance_to_end = np.arccos(
-        np.clip(np.dot(point_cartesian, arc_end_cartesian), -1, 1)
+    distance_to_end = da.arccos(
+        da.clip(da.dot(point_cartesian, arc_end_cartesian), -1, 1)
     )
 
     # Choose the appropriate distance
-    distances = np.where(
+    distances = da.where(
         is_between_arc,
         angle_point_to_projection,
-        np.minimum(distance_to_start, distance_to_end),
+        da.minimum(distance_to_start, distance_to_end),
     )
 
     # Distance returned in radians
@@ -262,42 +261,9 @@ def distance_to_convex_hull_boundary(
     else:
         print("Calculating distances")
         arcs = np.stack(chull_arcs)
-        
-        # Pre-filter: use quick great-circle distance to arc endpoints to eliminate
-        # points that are clearly far from the boundary
-        print("Pre-filtering with great-circle distance to arc endpoints")
         import ipdb; ipdb.set_trace()
-        arc_endpoints = np.vstack([arcs[:, 0], arcs[:, 1]])  # All start and end points
-        # Compute distance from each exterior point to each arc endpoint
-        distances_to_endpoints = np.arccos(
-            np.clip(
-                np.dot(da_xyz.values, arc_endpoints.T),
-                -1, 1
-            )
-        )
-        # For each point, find the minimum distance to any arc endpoint
-        min_dist_to_endpoints = distances_to_endpoints.min(axis=1)
-        
-        # Only compute the expensive shortest_distance_to_arc for points that might
-        # be within the margin (use a generous threshold to be safe)
-        # We'll compute for all for now, but filter points with very large distances
-        max_distance_threshold = 2 * np.pi / 360  # 1 degrees - generous threshold
-        points_to_check = min_dist_to_endpoints < max_distance_threshold
-        num_points_filtered = np.sum(~points_to_check)
-        print(f"Pre-filtering eliminated {num_points_filtered} / {len(min_dist_to_endpoints)} points")
-        
-        if np.any(points_to_check):
-            da_xyz_filtered = da_xyz[points_to_check]
-            global pbar
-            with tqdm(total=len(chull_arcs)) as pbar:
-                distances = shortest_distance_to_arc(da_xyz_filtered, arcs[:,0], arcs[:,1])
-            mindist_to_ref_filtered = distances.min(axis=0)
-            
-            # Create full array with filtered values
-            mindist_to_ref = np.full(len(min_dist_to_endpoints), np.inf)
-            mindist_to_ref[points_to_check] = mindist_to_ref_filtered
-        else:
-            mindist_to_ref = np.full(len(min_dist_to_endpoints), np.inf)
+        distances = shortest_distance_to_arc(da_xyz.cupy.as_cupy(), cp.asarray(arcs[:,0]), cp.asarray(arcs[:,1]))
+        mindist_to_ref = distances.min(axis=0).load()
 
         da_mindist_to_ref = xr.DataArray(
             mindist_to_ref, coords=ds_exterior_lat.coords, dims=ds_exterior_lat.dims
