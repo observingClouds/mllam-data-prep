@@ -2,7 +2,11 @@ import argparse
 import os
 from pathlib import Path
 
+import sys
 from loguru import logger
+
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 
 from .create_dataset import create_dataset_zarr
 
