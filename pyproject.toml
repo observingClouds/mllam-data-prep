@@ -28,7 +28,9 @@ dependencies = [
     "psutil>=5.7.2",
     "packaging>=23.1",
     "deepdiff>=8.2.0",
-    "cupy-cuda12x"
+    "cupy-cuda12x",
+    "cupy-xarray",
+    "dask-cuda[cu12]>=25.12.0",
 ]
 requires-python = ">=3.9"
 readme = "README.md"
@@ -64,3 +66,7 @@ dev = [
 ]
 [project.scripts]
 mllam_data_prep = "mllam_data_prep:cli.call"
+
+[tool.uv.sources]
+cupy-xarray = { git = "https://github.com/xarray-contrib/cupy-xarray.git", rev = "1c50016e81c586c4f372bc0a6543f47c9b9cae5f" }
+

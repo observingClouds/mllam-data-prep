@@ -11,7 +11,7 @@ DASK_DISTRIBUTED_AVAILABLE = True
 try:
     import psutil
     from dask.diagnostics import ProgressBar
-    from dask.distributed import LocalCluster
+    from dask_cuda import LocalCUDACluster
 except (ImportError, ModuleNotFoundError):
     DASK_DISTRIBUTED_AVAILABLE = False
 
@@ -73,11 +73,7 @@ def call(args=None):
             f"Setting up dask.distributed.LocalCluster with {n_local_cores} cores and {memory_per_worker / 1024 / 1024:0.0f} MB of memory per worker"
         )
 
-        cluster = LocalCluster(
-            n_workers=n_local_cores,
-            threads_per_worker=1,
-            memory_limit=memory_per_worker,
-        )
+        cluster = LocalCUDACluster()
 
         # print the dashboard link
         logger.info(f"Dashboard link: {cluster.dashboard_link}")
