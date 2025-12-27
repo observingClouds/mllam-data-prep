@@ -117,44 +117,13 @@ def _latlon_to_unit_sphere_xyz(
     return da_xyz
 
 
-def cross_product(a, b):
-    """
-    Compute cross product compatible with dask arrays.
-    Handles broadcasting for vectors and arrays of vectors.
-    
-    Parameters
-    ----------
-    a : dask.array, shape (..., 3)
-        First vector(s)
-    b : dask.array, shape (..., 3)
-        Second vector(s)
-    
-    Returns
-    -------
-    dask.array, shape (..., 3)
-        Cross product result
-    """
-    # Cross product formula: c = a × b
-    # c[0] = a[1]*b[2] - a[2]*b[1]
-    # c[1] = a[2]*b[0] - a[0]*b[2]
-    # c[2] = a[0]*b[1] - a[1]*b[0]
-    
-    result = da.stack([
-        a[..., 1] * b[..., 2] - a[..., 2] * b[..., 1],
-        a[..., 2] * b[..., 0] - a[..., 0] * b[..., 2],
-        a[..., 0] * b[..., 1] - a[..., 1] * b[..., 0]
-    ], axis=-1)
-    
-    return result
-
-
 def shortest_distance_to_arc(
     point_cartesian: da.Array,
     arc_start_cartesian: da.Array,
     arc_end_cartesian: da.Array,
 ) -> da.Array:
     """
-    Compute shortest haversine distance from a set of points to an arc on the
+    Compute shortest haversine distance from a set of points to arc(s) on the
     surface of the sphere. All points are assumed to be on the surface of a
     sphere of the same radius (e.g. the unit sphere) given in Cartesian (x, y,
     z) coordinates.
@@ -163,58 +132,106 @@ def shortest_distance_to_arc(
     ----------
     point_cartesian : da.Array, shape (num_points, 3)
         Points to measure distance from
-    arc_start_cartesian : da.Array, shape (3,)
-        Start point of arc
-    arc_end_cartesian : da.Array, shape (3,)
-        End point of arc
+    arc_start_cartesian : da.Array, shape (3,) or (N, 3)
+        Start point(s) of arc(s)
+    arc_end_cartesian : da.Array, shape (3,) or (N, 3)
+        End point(s) of arc(s)
 
     Returns
     -------
-    da.Array, shape (num_points,)
+    da.Array, shape (num_points,) if single arc, or (num_points, N) if N arcs
         The distances in radians
     """
-    # Calculate normal vector to the plane of the great circle
-    normal_vector = cross_product(arc_start_cartesian, arc_end_cartesian)
-    normal_vector = normal_vector / da.linalg.norm(normal_vector)  # Normalize
-
+    # Handle both single arc and multiple arcs
+    single_arc = arc_start_cartesian.ndim == 1
+    if single_arc:
+        arc_start_cartesian = arc_start_cartesian[da.newaxis, :]
+        arc_end_cartesian = arc_end_cartesian[da.newaxis, :]
+    
+    # arc_start_cartesian and arc_end_cartesian now have shape (N, 3)
+    # point_cartesian has shape (num_points, 3)
+    num_points = point_cartesian.shape[0]
+    num_arcs = arc_start_cartesian.shape[0]
+    
+    # Calculate normal vector to the plane of the great circle for each arc
+    # Shape: (N, 3)
+    normal_vector = cross_product_broadcast(arc_start_cartesian, arc_end_cartesian)
+    normal_norms = da.linalg.norm(normal_vector, axis=1, keepdims=True)
+    normal_vector = normal_vector / normal_norms  # Shape: (N, 3)
+    
+    # Broadcast for batched computation
+    # point_cartesian: (num_points, 1, 3)
+    # normal_vector: (1, N, 3)
+    point_bc = point_cartesian[:, da.newaxis, :]  # (num_points, 1, 3)
+    normal_bc = normal_vector[da.newaxis, :, :]   # (1, N, 3)
+    
     # Project point onto the plane
-    point_projection = (
-        point_cartesian
-        - da.dot(point_cartesian, normal_vector)[:, da.newaxis] * normal_vector
-    )
-
+    # dot product: (num_points, N)
+    dot_point_normal = da.sum(point_bc * normal_bc, axis=2)
+    
+    # point_projection: (num_points, N, 3)
+    point_projection = point_bc - dot_point_normal[:, :, da.newaxis] * normal_bc
+    
     # Normalize to get the projected point on the sphere's surface
-    projected_point = (
-        point_projection / da.linalg.norm(point_projection, axis=1)[:, da.newaxis]
-    )
-
+    proj_norms = da.linalg.norm(point_projection, axis=2, keepdims=True)
+    projected_point = point_projection / proj_norms
+    
     # Calculate the angle between the original point and the projected point
     angle_point_to_projection = da.arccos(
-        da.clip(da.sum(point_cartesian * projected_point, axis=1), -1, 1)
-    )
-
+        da.clip(da.sum(point_bc * projected_point, axis=2), -1, 1)
+    )  # Shape: (num_points, N)
+    
     # Check if the projected point is between the start and end points of the arc
-    is_between_arc = (
-        da.dot(cross_product(arc_start_cartesian, projected_point), normal_vector) >= 0
-    ) & (da.dot(cross_product(projected_point, arc_end_cartesian), normal_vector) >= 0)
-
+    # cross_product(arc_start, projected_point) for each arc and point
+    # arc_start_cartesian: (N, 3) -> broadcast to (1, N, 3)
+    arc_start_bc = arc_start_cartesian[da.newaxis, :, :]
+    arc_end_bc = arc_end_cartesian[da.newaxis, :, :]
+    
+    # For each point and arc pair
+    # projected_point: (num_points, N, 3)
+    cross1 = cross_product_broadcast(arc_start_bc, projected_point)  # (num_points, N, 3)
+    cross2 = cross_product_broadcast(projected_point, arc_end_bc)     # (num_points, N, 3)
+    
+    # Dot with normal vector
+    dot1 = da.sum(cross1 * normal_bc, axis=2)  # (num_points, N)
+    dot2 = da.sum(cross2 * normal_bc, axis=2)  # (num_points, N)
+    
+    is_between_arc = (dot1 >= 0) & (dot2 >= 0)
+    
     # Calculate distances from the point to the start and end points of the arc
     distance_to_start = da.arccos(
-        da.clip(da.dot(point_cartesian, arc_start_cartesian), -1, 1)
-    )
+        da.clip(da.sum(point_bc * arc_start_bc, axis=2), -1, 1)
+    )  # (num_points, N)
+    
     distance_to_end = da.arccos(
-        da.clip(da.dot(point_cartesian, arc_end_cartesian), -1, 1)
-    )
-
+        da.clip(da.sum(point_bc * arc_end_bc, axis=2), -1, 1)
+    )  # (num_points, N)
+    
     # Choose the appropriate distance
     distances = da.where(
         is_between_arc,
         angle_point_to_projection,
         da.minimum(distance_to_start, distance_to_end),
-    )
-
+    )  # (num_points, N)
+    
+    # If single arc was passed, return (num_points,) shape
+    if single_arc:
+        distances = distances[:, 0]
+    
     # Distance returned in radians
     return distances
+
+
+def cross_product_broadcast(a, b):
+    """
+    Compute cross product with broadcasting support.
+    a and b should have the same shape with last dimension being 3.
+    """
+    return da.stack([
+        a[..., 1] * b[..., 2] - a[..., 2] * b[..., 1],
+        a[..., 2] * b[..., 0] - a[..., 0] * b[..., 2],
+        a[..., 0] * b[..., 1] - a[..., 1] * b[..., 0],
+    ], axis=-1)
 
 
 def distance_to_convex_hull_boundary(
@@ -284,26 +301,27 @@ def distance_to_convex_hull_boundary(
 
     # Calculate minimum distance to each arc and take the minimum
     # distance over all arcs
-    # import ipdb; ipdb.set_trace()
     use_cached_distances = False
     if use_cached_distances:
         print("Using cached distances")
         da_mindist_to_ref = xr.open_dataset("/home/has/repos/mllam-exps-ShCu/da_mindist_to_ref.nc")['da_mindist_to_ref']
     else:
         print("Calculating distances")
-        import ipdb; ipdb.set_trace()
-        mindist_to_ref = da.stack(
-            [
-                shortest_distance_to_arc(da_xyz.chunk(grid_index=10000).data, arc_start.data, arc_end.data)
-                for arc_start, arc_end in chull_arcs
-            ],
-            axis=0,
-        ).min(axis=0)
-        mindist_to_ref = mindist_to_ref.compute()
+        from dask_cuda import LocalCUDACluster
+        from dask.distributed import Client
+        cluster = LocalCUDACluster()
+        client = Client(cluster)
+        arcs = cp.asarray(np.stack(chull_arcs))
+        da_xyz_gpu = da_xyz.chunk(grid_index=10000).as_cupy().data
+        distances = shortest_distance_to_arc(da_xyz_gpu, arcs[:, 0], arcs[:, 1])
+
+        mindist_to_ref = distances.min(axis=1).compute(scheduler=client)
 
         da_mindist_to_ref = xr.DataArray(
-            mindist_to_ref, coords=ds_exterior_lat.coords, dims=ds_exterior_lat.dims
+            mindist_to_ref.get(), coords=ds_exterior_lat.coords, dims=ds_exterior_lat.dims
         )
+        cluster.close()
+        client.close()
         da_mindist_to_ref.attrs[
             "long_name"
         ] = "minimum distance to convex hull boundary of reference dataset"
